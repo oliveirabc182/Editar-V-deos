@@ -1,0 +1,225 @@
+import tkinter as tk
+from tkinter import filedialog
+import os
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, clips_array
+from tkinter import ttk
+import threading
+
+# Variável global para controlar a pausa
+pausado = False
+
+# Função para selecionar a pasta de Vídeos 1
+def selecionar_pasta1():
+    pasta = filedialog.askdirectory()
+    input_pasta1.delete(0, tk.END)
+    input_pasta1.insert(0, pasta)
+
+# Função para selecionar a pasta de Vídeos 2
+def selecionar_pasta2():
+    pasta = filedialog.askdirectory()
+    input_pasta2.delete(0, tk.END)
+    input_pasta2.insert(0, pasta)
+
+# Função para selecionar a pasta de Saída
+def selecionar_pasta_saida():
+    pasta = filedialog.askdirectory()
+    input_saida.delete(0, tk.END)
+    input_saida.insert(0, pasta)
+
+# Função para combinar vídeos em segundo plano
+def combinar_videos_background():
+    global pausado
+    pausado = False
+    pasta1 = input_pasta1.get()
+    pasta2 = input_pasta2.get()
+    caminho_saida = input_saida.get()
+    largura = int(input_largura.get())
+    altura = int(input_altura.get())
+    opcao = selecionar_opcao()  # Obtém a opção escolhida
+    texto = texto_personalizado.get()  # Obtém o texto personalizado
+    tamanho_fonte = int(input_tamanho_fonte.get())  # Obtém o tamanho da fonte
+
+    videos_pasta1 = [f for f in os.listdir(pasta1) if f.endswith(".mp4")]
+    videos_pasta2 = [f for f in os.listdir(pasta2) if f.endswith(".mp4")]
+
+    total_videos = min(len(videos_pasta1), len(videos_pasta2))
+    progresso["maximum"] = total_videos
+
+    for i in range(total_videos):
+        if pausado:
+            break
+
+        nome_video1 = f"{i + 1}.mp4"
+        nome_video2 = f"{i + 1}.mp4"
+
+        if nome_video1 in videos_pasta1 and nome_video2 in videos_pasta2:
+            try:
+                video1 = VideoFileClip(os.path.join(pasta1, nome_video1))
+                video2 = VideoFileClip(os.path.join(pasta2, nome_video2))
+
+                if opcao in ["Lado a Lado", "Em Cima e Em Baixo"]:
+                    min_duration = min(video1.duration, video2.duration)
+                    video1 = video1.subclip(0, min_duration)
+                    video2 = video2.subclip(0, min_duration)
+                    video2 = video2.set_audio(None)  # Silencia o áudio do vídeo secundário
+                elif opcao in ["Início do Vídeo", "Final do Vídeo"]:
+                    # Manter o áudio original do vídeo secundário
+                    pass
+
+                if opcao == "Lado a Lado":
+                    video_combinado = clips_array([[video1, video2]])
+                elif opcao == "Em Cima e Em Baixo":
+                    video_combinado = clips_array([[video1], [video2]])
+                elif opcao == "Início do Vídeo":
+                    video_combinado = concatenate_videoclips([video2, video1], method="compose")
+                elif opcao == "Final do Vídeo":
+                    video_combinado = concatenate_videoclips([video1, video2], method="compose")
+
+                video_combinado = video_combinado.resize((largura, altura))
+
+                nome_arquivo_saida = f"video_combinado_{i + 1}.mp4"
+
+                # Adicione texto ao vídeo
+                if adicionar_texto.get() and texto:
+                    txt_clip = TextClip(texto, fontsize=tamanho_fonte, color='white', bg_color='black')
+                    txt_clip = txt_clip.set_position('center').set_duration(video_combinado.duration)
+    
+                if txt_clip.size[0] < video_combinado.size[0]:
+                    txt_clip = txt_clip.set_position(("center", "center"))
+                else:
+                    txt_clip = txt_clip.set_position(("center", 0.1))
+    
+                video_combinado = CompositeVideoClip([video_combinado, txt_clip.set_duration(video_combinado.duration)])
+
+
+                # Atualize a barra de progresso para cada vídeo
+                progresso["value"] = i + 1
+                label_processo["text"] = f"Combinando vídeo {i + 1} de {total_videos}..."
+
+                video_combinado.write_videofile(os.path.join(caminho_saida, nome_arquivo_saida), audio_codec='aac', codec="libx264")
+
+                video1.close()
+                video2.close()
+            except Exception as e:
+                print(f"Erro ao processar vídeo {i + 1}: {str(e)}")
+        else:
+            print(f"Vídeo {i + 1} não encontrado nas pastas.")
+
+    # Restaure o texto do processo após a conclusão
+    label_processo["text"] = "Processo concluído"
+    progresso["value"] = 0
+
+# Função para pausar o processo
+def pausar_processo():
+    global pausado
+    pausado = True
+
+# Função para iniciar a combinação de vídeos em uma nova thread
+def iniciar_combinacao():
+    progresso["value"] = 0
+    label_processo["text"] = ""
+    thread = threading.Thread(target=combinar_videos_background)
+    thread.start()
+
+# Função para obter a opção de combinação escolhida usando uma janela de diálogo
+def selecionar_opcao():
+    opcao = combo_opcao.get()
+    return opcao
+
+# Configuração da interface gráfica
+root = tk.Tk()
+root.title("Combinar Vídeos")
+root.geometry("550x450")  # Aumentei a altura para acomodar a entrada de texto
+root.resizable(0, 0)
+
+# Seção 1: Pastas
+frame_pasta = tk.Frame(root)
+frame_pasta.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+label_pasta1 = tk.Label(frame_pasta, text="Vídeo Principal:")
+label_pasta2 = tk.Label(frame_pasta, text="Vídeo Secundário:")
+label_saida = tk.Label(frame_pasta, text="Pasta de Saída:")
+
+label_pasta1.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+label_pasta2.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+label_saida.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+
+input_pasta1 = tk.Entry(frame_pasta, width=40)
+input_pasta2 = tk.Entry(frame_pasta, width=40)
+input_saida = tk.Entry(frame_pasta, width=40)
+
+input_pasta1.grid(row=0, column=1, padx=5, pady=5)
+input_pasta2.grid(row=1, column=1, padx=5, pady=5)
+input_saida.grid(row=2, column=1, padx=5, pady=5)
+
+botao_selecionar_pasta1 = tk.Button(frame_pasta, text="Selecionar Pasta", command=selecionar_pasta1)
+botao_selecionar_pasta2 = tk.Button(frame_pasta, text="Selecionar Pasta", command=selecionar_pasta2)
+botao_selecionar_pasta_saida = tk.Button(frame_pasta, text="Selecionar Pasta", command=selecionar_pasta_saida)
+
+botao_selecionar_pasta1.grid(row=0, column=2, padx=5, pady=5)
+botao_selecionar_pasta2.grid(row=1, column=2, padx=5, pady=5)
+botao_selecionar_pasta_saida.grid(row=2, column=2, padx=5, pady=5)
+
+# Seção 2: Medidas e Combinação (atualizada com a entrada do tamanho da fonte)
+frame_medidas = tk.Frame(root)
+frame_medidas.grid(row=1, column=0, padx=10, pady=10, sticky="w")
+
+label_largura = tk.Label(frame_medidas, text="Largura:")
+input_largura = tk.Entry(frame_medidas, width=10)
+
+label_altura = tk.Label(frame_medidas, text="Altura:")
+input_altura = tk.Entry(frame_medidas, width=10)
+
+label_formato = tk.Label(frame_medidas, text="Escolha o Modelo Abaixo:")
+opcoes = ["Lado a Lado", "Em Cima e Em Baixo", "Início do Vídeo", "Final do Vídeo"]
+combo_opcao = ttk.Combobox(frame_medidas, values=opcoes, state="readonly")
+combo_opcao.set(opcoes[0])
+
+adicionar_texto = tk.BooleanVar()
+checkbox_adicionar_texto = tk.Checkbutton(frame_medidas, text="Adicionar Texto", variable=adicionar_texto)
+
+label_texto_personalizado = tk.Label(frame_medidas, text="Texto Personalizado:")
+texto_personalizado = tk.Entry(frame_medidas, width=30)
+
+# Mova a caixa "Tamanho da Fonte" para esta seção
+label_tamanho_fonte = tk.Label(frame_medidas, text="Tamanho da Fonte:")
+input_tamanho_fonte = tk.Entry(frame_medidas, width=10)
+
+label_largura.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+input_largura.grid(row=0, column=1, padx=5, pady=5)
+label_altura.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+input_altura.grid(row=1, column=1, padx=5, pady=5)
+label_formato.grid(row=0, column=2, padx=5, pady=5, columnspan=2, sticky="w")
+combo_opcao.grid(row=1, column=2, padx=5, pady=5, columnspan=2, sticky="e")
+checkbox_adicionar_texto.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+label_texto_personalizado.grid(row=2, column=2, padx=5, pady=5, sticky="w")
+texto_personalizado.grid(row=2, column=3, padx=5, pady=5, sticky="w")
+
+# Mova a caixa "Tamanho da Fonte" abaixo da caixa de texto
+label_tamanho_fonte.grid(row=3, column=0, padx=5, pady=5, sticky="w")
+input_tamanho_fonte.grid(row=3, column=1, padx=5, pady=5)
+
+# Seção 3: Combinação e Pausa
+frame_combinacao = tk.Frame(root)
+frame_combinacao.grid(row=2, column=0, padx=10, pady=10, sticky="w")
+
+botao_combinar = tk.Button(frame_combinacao, text="INICIAR", command=iniciar_combinacao)
+botao_pausa = tk.Button(frame_combinacao, text="PARAR", command=pausar_processo)
+
+botao_combinar.grid(row=0, column=0, padx=5, pady=5)
+botao_pausa.grid(row=0, column=1, padx=5, pady=5)
+
+# Seção 4: Progresso
+frame_progresso = tk.Frame(root)
+frame_progresso.grid(row=3, column=0, padx=10, pady=10)
+
+label_processo = tk.Label(frame_progresso, text="")
+label_processo.grid(row=0, column=0, padx=5, pady=5)
+
+progresso = ttk.Progressbar(frame_progresso, mode="determinate", length=400)
+progresso.grid(row=1, column=0, padx=5, pady=5)
+
+frame_progresso.grid_rowconfigure(1, weight=1)  # Adicione esta linha
+
+# Main loop
+root.mainloop()
